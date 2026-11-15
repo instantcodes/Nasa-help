@@ -2,12 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  handleAnalyze,
-  handleCoach,
-  handleReport,
-  handleResearch,
-} from './server/geminiService';
+import geminiHandler from './api/gemini.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,10 +10,14 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
-app.post('/api/ai/coach', (req, res) => handleCoach(req, res));
-app.post('/api/ai/analyze', (req, res) => handleAnalyze(req, res));
-app.post('/api/ai/research', (req, res) => handleResearch(req, res));
-app.post('/api/ai/report', (req, res) => handleReport(req, res));
+app.post('/api/gemini', async (req, res) => {
+  try {
+    await geminiHandler(req, res);
+  } catch (err) {
+    console.error('Proxy error:', err);
+    res.status(500).json({ error: { message: 'Could not reach Gemini service.' } });
+  }
+});
 
 async function startServer() {
   const port = Number(process.env.PORT) || 3000;
