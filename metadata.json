@@ -1,0 +1,8 @@
+{
+  "name": "VitalDrift",
+  "description": "Offline-first astronaut health monitoring software for long-duration space missions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
