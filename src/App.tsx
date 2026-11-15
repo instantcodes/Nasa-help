@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { ActionCardsSection } from './components/ActionCardsSection';
 import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { DailyCheckInSection } from './components/DailyCheckInSection';
@@ -201,6 +202,7 @@ export default function App() {
 
   return (
     <div id="top" className="min-h-screen bg-[#070B12] text-slate-100">
+      <SpeedInsights />
       <TopBar
         queuedCount={outbox.length}
         onOpenGroundSummary={() => setIsGroundModalOpen(true)}
