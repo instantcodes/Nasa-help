@@ -1,16 +1,33 @@
-import React, { useMemo, useState } from 'react';
-import { Check, Copy, Download, Radio, WifiOff, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Check,
+  Copy,
+  Download,
+  Loader2,
+  Radio,
+  Sparkles,
+  WifiOff,
+  X,
+} from 'lucide-react';
+import { buildDaySnapshots, generateAiGroundReport } from '../services/aiClient';
+import {
+  BaselineMap,
   DailyCheckIn,
+  DailyMetrics,
   GroundSummaryRecord,
   LightStatus,
   SystemEvaluation,
 } from '../types/health';
+import { AiAttribution, OfflineAiNotice } from './AiBadge';
 
 interface GroundSummaryModalProps {
   isOpen: boolean;
+  isOnline: boolean;
   day: number;
   systems: SystemEvaluation[];
+  missionDays: DailyMetrics[];
+  baseline: BaselineMap;
+  checkIns: Record<number, DailyCheckIn>;
   completedActions: Record<string, boolean>;
   checkIn?: DailyCheckIn;
   outbox: GroundSummaryRecord[];
@@ -26,8 +43,12 @@ const STATUS_WORD: Record<LightStatus, string> = {
 
 export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
   isOpen,
+  isOnline,
   day,
   systems,
+  missionDays,
+  baseline,
+  checkIns,
   completedActions,
   checkIn,
   outbox,
@@ -38,13 +59,22 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [queuedNow, setQueuedNow] = useState(false);
 
+  const [aiReport, setAiReport] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAiReport(null);
+    setAiError(null);
+  }, [day, includePrivateNote]);
+
   const overallStatus: LightStatus = useMemo(() => {
     if (systems.some((s) => s.status === 'red')) return 'red';
     if (systems.some((s) => s.status === 'yellow')) return 'yellow';
     return 'green';
   }, [systems]);
 
-  const summaryText = useMemo(() => {
+  const offlineSummaryText = useMemo(() => {
     const lines: string[] = [
       `VITALDRIFT DAILY STATUS SUMMARY — MISSION DAY ${day} OF 90`,
       `Overall Crew Health: ${STATUS_WORD[overallStatus]}`,
@@ -87,13 +117,65 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
 
   if (!isOpen) return null;
 
+  const activeText = aiReport ?? offlineSummaryText;
+
+  const handleGenerateAiReport = async () => {
+    if (!isOnline || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const last7Days = buildDaySnapshots(
+        missionDays,
+        baseline,
+        checkIns,
+        Math.max(1, day - 6),
+        day
+      );
+
+      const completedSteps: string[] = [];
+      for (const sys of systems) {
+        for (const step of sys.actionSteps) {
+          if (completedActions[`day-${day}-${step.id}`]) {
+            completedSteps.push(`${sys.name}: ${step.title}`);
+          }
+        }
+      }
+
+      const checkInSummary = checkIn
+        ? `Mood ${checkIn.mood}/5, Rested ${checkIn.sleepQuality}/5, Symptoms: ${
+            checkIn.symptoms.length > 0 ? checkIn.symptoms.join(', ') : 'None'
+          }${
+            includePrivateNote && checkIn.privateNote
+              ? `, Note: ${checkIn.privateNote}`
+              : ''
+          }`
+        : null;
+
+      const res = await generateAiGroundReport({
+        day,
+        systems,
+        last7Days,
+        completedSteps,
+        checkInSummary,
+      });
+      setAiReport(res.report);
+    } catch (err) {
+      setAiError(
+        err instanceof Error ? err.message : 'Unable to generate AI report right now.'
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const handleQueue = () => {
     const record: GroundSummaryRecord = {
       id: `${Date.now()}-${day}`,
       day,
       createdAt: new Date().toLocaleString(),
       overallStatus,
-      summaryText,
+      summaryText: activeText,
       includedPrivateNote: includePrivateNote,
       deliveryState: 'queued_offline',
     };
@@ -104,7 +186,7 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(summaryText);
+      await navigator.clipboard.writeText(activeText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -113,11 +195,11 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
   };
 
   const handleDownload = () => {
-    const blob = new Blob([summaryText], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([activeText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vitaldrift-day-${day}-summary.txt`;
+    a.download = `vitaldrift-day-${day}-report.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -137,7 +219,7 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
             </h2>
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
               <WifiOff className="h-3.5 w-3.5 text-cyan-400" aria-hidden="true" />
-              <span>Works completely offline — queues locally until next radio window</span>
+              <span>Works offline anytime — optional AI report available when connected</span>
             </p>
           </div>
 
@@ -151,7 +233,7 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
           </button>
         </div>
 
-        <div className="overflow-y-auto px-6 py-5 space-y-5">
+        <div className="overflow-y-auto px-6 py-5 space-y-4">
           {checkIn?.privateNote && (
             <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer">
               <input
@@ -164,8 +246,62 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
             </label>
           )}
 
+          {/* Optional AI One-Page Ground Report Generator */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-[#0A0F18] p-3.5">
+            <div className="text-xs text-slate-300">
+              Want a written one-page mission health report for Flight Surgeons?
+            </div>
+
+            {!isOnline ? (
+              <OfflineAiNotice compact />
+            ) : (
+              <div className="flex items-center gap-2">
+                {aiReport && (
+                  <button
+                    type="button"
+                    onClick={() => setAiReport(null)}
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    Use offline summary
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGenerateAiReport}
+                  disabled={aiLoading}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3.5 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span>
+                    {aiLoading
+                      ? 'Writing report...'
+                      : aiReport
+                      ? 'Regenerate AI report'
+                      : 'Write AI mission report'}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {aiError && (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-950/25 p-3 text-xs text-rose-200">
+              {aiError}
+            </div>
+          )}
+
+          {aiReport && (
+            <div className="pt-1">
+              <AiAttribution />
+            </div>
+          )}
+
           <pre className="whitespace-pre-wrap rounded-lg border border-slate-800 bg-[#070B12] p-4 font-mono text-xs leading-relaxed text-slate-200">
-            {summaryText}
+            {activeText}
           </pre>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -188,7 +324,7 @@ export const GroundSummaryModal: React.FC<GroundSummaryModalProps> = ({
               ) : (
                 <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               )}
-              <span>{copied ? 'Copied' : 'Copy text'}</span>
+              <span>{copied ? 'Copied' : 'Copy report'}</span>
             </button>
 
             <button

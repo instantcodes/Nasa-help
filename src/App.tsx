@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActionCardsSection } from './components/ActionCardsSection';
+import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { DailyCheckInSection } from './components/DailyCheckInSection';
 import { GroundSummaryModal } from './components/GroundSummaryModal';
 import { MissionTimeline } from './components/MissionTimeline';
@@ -8,6 +9,7 @@ import { TopBar } from './components/TopBar';
 import { TrendChart } from './components/TrendChart';
 import { INDICATORS, MISSION_LENGTH_DAYS } from './data/missionGenerator';
 import { calculateBaseline, evaluateSystems } from './logic/driftEngine';
+import { useOnlineStatus } from './services/aiClient';
 import {
   loadCheckIns,
   loadCompletedActions,
@@ -70,6 +72,7 @@ export default function App() {
 
   const [trendFilter, setTrendFilter] = useState<TrendFilter>('all');
   const [isGroundModalOpen, setIsGroundModalOpen] = useState<boolean>(false);
+  const isOnline = useOnlineStatus();
 
   const baseline = useMemo(() => calculateBaseline(missionDays), [missionDays]);
 
@@ -257,6 +260,7 @@ export default function App() {
               <SystemCard
                 key={sys.key}
                 system={sys}
+                isOnline={isOnline}
                 isWhyOpen={openWhySystems[sys.key]}
                 onToggleWhy={() => handleToggleWhy(sys.key)}
               />
@@ -332,7 +336,17 @@ export default function App() {
           )}
         </section>
 
-        {/* 4. 30-Second Private Daily Check-In */}
+        {/* 4. AI Health Assistant (Coach + 90-Day Analyzer) */}
+        <AiAssistantPanel
+          day={selectedDay}
+          isOnline={isOnline}
+          systems={systems}
+          missionDays={missionDays}
+          baseline={baseline}
+          checkIns={checkIns}
+        />
+
+        {/* 5. 30-Second Private Daily Check-In */}
         <DailyCheckInSection
           day={selectedDay}
           existingCheckIn={checkIns[selectedDay]}
@@ -347,8 +361,12 @@ export default function App() {
 
       <GroundSummaryModal
         isOpen={isGroundModalOpen}
+        isOnline={isOnline}
         day={selectedDay}
         systems={systems}
+        missionDays={missionDays}
+        baseline={baseline}
+        checkIns={checkIns}
         completedActions={completedActions}
         checkIn={checkIns[selectedDay]}
         outbox={outbox}

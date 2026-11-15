@@ -1,9 +1,19 @@
-import React from 'react';
-import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  HelpCircle,
+  Loader2,
+} from 'lucide-react';
+import { lookupNasaResearch, ResearchResult } from '../services/aiClient';
 import { LightStatus, SystemEvaluation } from '../types/health';
+import { AiAttribution, OfflineAiNotice } from './AiBadge';
 
 interface SystemCardProps {
   system: SystemEvaluation;
+  isOnline: boolean;
   isWhyOpen: boolean;
   onToggleWhy: () => void;
 }
@@ -47,10 +57,35 @@ const STATUS_CONFIG: Record<
 
 export const SystemCard: React.FC<SystemCardProps> = ({
   system,
+  isOnline,
   isWhyOpen,
   onToggleWhy,
 }) => {
   const style = STATUS_CONFIG[system.status];
+  const [research, setResearch] = useState<ResearchResult | null>(null);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+
+  const handleLearnMore = async () => {
+    if (!isOnline || researchLoading) return;
+    setResearchLoading(true);
+    setResearchError(null);
+
+    try {
+      const data = await lookupNasaResearch({
+        systemName: system.name,
+        status: system.status,
+        whyReasons: system.whyReasons,
+      });
+      setResearch(data);
+    } catch (err) {
+      setResearchError(
+        err instanceof Error ? err.message : 'Unable to look up NASA research right now.'
+      );
+    } finally {
+      setResearchLoading(false);
+    }
+  };
 
   return (
     <article
@@ -107,11 +142,11 @@ export const SystemCard: React.FC<SystemCardProps> = ({
         </div>
       </div>
 
-      {/* Expandable plain-English Why? drawer */}
+      {/* Expandable plain-English Why? drawer + NASA Research Lookup */}
       {isWhyOpen && (
-        <div className="mt-4 rounded-lg border border-slate-800 bg-[#0A0F18] p-3.5 text-xs leading-relaxed text-slate-200">
+        <div className="mt-4 space-y-3 rounded-lg border border-slate-800 bg-[#0A0F18] p-3.5 text-xs leading-relaxed text-slate-200">
           {system.upgradedByCombiner && system.combinerNote && (
-            <p className="mb-2 font-medium text-rose-300">{system.combinerNote}</p>
+            <p className="font-medium text-rose-300">{system.combinerNote}</p>
           )}
           <ul className="space-y-1.5">
             {system.whyReasons.map((reason, idx) => (
@@ -120,6 +155,72 @@ export const SystemCard: React.FC<SystemCardProps> = ({
               </li>
             ))}
           </ul>
+
+          {/* NASA Research Lookup */}
+          <div className="border-t border-slate-800/90 pt-3">
+            {!isOnline ? (
+              <OfflineAiNotice compact />
+            ) : (
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  onClick={handleLearnMore}
+                  disabled={researchLoading}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-cyan-500/35 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {researchLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span>
+                    {researchLoading
+                      ? 'Searching NASA research...'
+                      : research
+                      ? 'Refresh NASA research'
+                      : 'Learn more'}
+                  </span>
+                </button>
+
+                {researchError && (
+                  <div className="rounded border border-rose-500/40 bg-rose-950/25 p-2 text-rose-200">
+                    {researchError}
+                  </div>
+                )}
+
+                {research && !researchLoading && (
+                  <div className="space-y-2 rounded-md border border-slate-800 bg-[#070B12] p-2.5">
+                    <AiAttribution />
+                    <div className="whitespace-pre-wrap text-slate-300">
+                      {research.summary}
+                    </div>
+                    {research.sources.length > 0 && (
+                      <div className="border-t border-slate-800/80 pt-2">
+                        <div className="text-[11px] font-semibold text-slate-400">
+                          Sources
+                        </div>
+                        <ul className="mt-1 space-y-1">
+                          {research.sources.map((src, i) => (
+                            <li key={i}>
+                              <a
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:text-cyan-200 underline underline-offset-2 break-all"
+                              >
+                                <span className="truncate max-w-[210px]">{src.title}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </article>

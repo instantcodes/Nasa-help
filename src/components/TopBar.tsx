@@ -40,6 +40,12 @@ export const TopBar: React.FC<TopBarProps> = ({ queuedCount, onOpenGroundSummary
             Trends
           </a>
           <a
+            href="#assistant"
+            className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
+          >
+            AI Coach
+          </a>
+          <a
             href="#checkin"
             className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
           >
